@@ -458,7 +458,7 @@
 
   <div class="toast" id="toast"></div>
 
-<script src="wasm_exec.js"></script>
+<script src="wasm_exec.js" onerror="console.log('wasm_exec.js not found, WASM mode unavailable')"></script>
 <script>
 (function() {
   // DOM elements
@@ -487,19 +487,22 @@
 
   // WASM initialization
   async function initWasm() {
-    if (typeof Go === 'undefined') return;
+    if (typeof Go === 'undefined') {
+      console.log('wasm_exec.js not loaded, using API mode');
+      return;
+    }
     try {
       var go = new Go();
-      var result = await WebAssembly.instantiateStreaming(
-        fetch('prettyql.wasm'),
-        go.importObject
-      );
+      var resp = await fetch('prettyql.wasm');
+      if (!resp.ok) throw new Error('prettyql.wasm not found (HTTP ' + resp.status + ')');
+      var result = await WebAssembly.instantiateStreaming(resp, go.importObject);
       go.run(result.instance);
       wasmReady = true;
       document.getElementById('modeIndicator').textContent = 'WASM';
       document.getElementById('modeIndicator').title = 'Running locally in your browser via WebAssembly';
     } catch (e) {
       console.log('WASM not available, falling back to API mode:', e.message);
+      document.getElementById('modeIndicator').title = 'WASM failed to load: ' + e.message + '. Using server API.';
     }
   }
 
@@ -631,8 +634,10 @@
         output.innerHTML = highlightPromQL(data.formatted);
       }
     } catch (err) {
+      var hint = wasmReady ? '' : '\n\nHint: WASM did not load. If running as a static site, make sure prettyql.wasm and wasm_exec.js are in the same directory as index.html (run build-wasm.sh first). If running via the Go server (--serve), this is expected — the server handles formatting.';
       output.innerHTML = '<span class="error-text">Failed to format query: ' +
         err.message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+        hint.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
         '</span>';
       lastFormattedRaw = '';
     } finally {

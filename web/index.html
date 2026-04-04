@@ -368,6 +368,17 @@
     opacity: 1;
   }
 
+  .mode-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
   @media (max-width: 768px) {
     header { padding: 1rem; }
     main { padding: 1rem; }
@@ -384,6 +395,7 @@
       <span>PromQL Formatter</span>
     </div>
     <div class="header-actions">
+      <span class="mode-badge" id="modeIndicator" title="Formatting via server API">API</span>
       <button class="icon-btn" id="settingsBtn" title="Grafana Settings">Settings</button>
       <button class="icon-btn" id="themeToggle" title="Toggle theme">Dark</button>
     </div>
@@ -446,6 +458,7 @@
 
   <div class="toast" id="toast"></div>
 
+<script src="wasm_exec.js" onerror="console.log('wasm_exec.js not found, WASM mode unavailable')"></script>
 <script>
 (function() {
   // DOM elements
@@ -470,6 +483,33 @@
   const toast = document.getElementById('toast');
 
   let lastFormattedRaw = '';
+  let wasmReady = false;
+
+  // WASM initialization
+  async function initWasm() {
+    if (typeof Go === 'undefined') {
+      console.log('wasm_exec.js not loaded, using API mode');
+      return;
+    }
+    try {
+      var go = new Go();
+      var resp = await fetch('prettyql.wasm');
+      if (!resp.ok) throw new Error('prettyql.wasm not found (HTTP ' + resp.status + ')');
+      var result = await WebAssembly.instantiateStreaming(resp, go.importObject);
+      go.run(result.instance);
+      wasmReady = true;
+      document.getElementById('modeIndicator').textContent = 'WASM';
+      document.getElementById('modeIndicator').title = 'Running locally in your browser via WebAssembly';
+    } catch (e) {
+      console.log('WASM not available, falling back to API mode:', e.message);
+      document.getElementById('modeIndicator').title = 'WASM failed to load: ' + e.message + '. Using server API.';
+    }
+  }
+
+  function formatViaWasm(query) {
+    var result = formatPromQL(query);
+    return result;
+  }
 
   // Theme
   function setTheme(theme) {
@@ -569,13 +609,20 @@
     formatBtn.textContent = 'Formatting...';
 
     try {
-      var resp = await fetch('/api/format', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query })
-      });
+      var data;
 
-      var data = await resp.json();
+      if (wasmReady) {
+        // Use WASM — synchronous, no network needed
+        data = formatViaWasm(query);
+      } else {
+        // Fall back to server API
+        var resp = await fetch('/api/format', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query })
+        });
+        data = await resp.json();
+      }
 
       if (data.error) {
         output.innerHTML = '<span class="error-text">' +
@@ -587,8 +634,10 @@
         output.innerHTML = highlightPromQL(data.formatted);
       }
     } catch (err) {
-      output.innerHTML = '<span class="error-text">Failed to connect to server: ' +
+      var hint = wasmReady ? '' : '\n\nHint: WASM did not load. If running as a static site, make sure prettyql.wasm and wasm_exec.js are in the same directory as index.html (run build-wasm.sh first). If running via the Go server (--serve), this is expected — the server handles formatting.';
+      output.innerHTML = '<span class="error-text">Failed to format query: ' +
         err.message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+        hint.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
         '</span>';
       lastFormattedRaw = '';
     } finally {
@@ -735,6 +784,9 @@
     var url = baseUrl + '/explore?orgId=1&left=' + encodeURIComponent(left);
     window.open(url, '_blank');
   });
+
+  // Initialize WASM if wasm_exec.js was loaded
+  initWasm();
 })();
 </script>
 </body>

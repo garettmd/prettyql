@@ -21,7 +21,7 @@ type formatRequest struct {
 
 type formatResponse struct {
 	Formatted string `json:"formatted,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Error     *FormatError `json:"error,omitempty"`
 }
 
 func handleFormat(w http.ResponseWriter, r *http.Request) {
@@ -34,14 +34,14 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(formatResponse{Error: "invalid JSON request"})
+		json.NewEncoder(w).Encode(formatResponse{Error: newAppError("invalid JSON request", "Send a POST body with a JSON object like {\"query\":\"...\"}.")})
 		return
 	}
 
 	if strings.TrimSpace(req.Query) == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(formatResponse{Error: "query cannot be empty"})
+		json.NewEncoder(w).Encode(formatResponse{Error: newAppError("query cannot be empty", "Paste a PromQL query before formatting it.")})
 		return
 	}
 
@@ -49,7 +49,11 @@ func handleFormat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		json.NewEncoder(w).Encode(formatResponse{Error: err.Error()})
+		if fe, ok := err.(*FormatError); ok {
+			json.NewEncoder(w).Encode(formatResponse{Error: fe})
+		} else {
+			json.NewEncoder(w).Encode(formatResponse{Error: newAppError(err.Error(), "Try again or check the server logs for more details.")})
+		}
 		return
 	}
 
@@ -91,7 +95,14 @@ func runCLI() {
 	input := strings.Join(lines, " ")
 	result, err := formatPromQL(input)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing PromQL query: %v\n", err)
+		if fe, ok := err.(*FormatError); ok {
+			fmt.Fprintf(os.Stderr, "Error parsing PromQL query: %s\n", fe.Message)
+			if fe.Suggestion != "" {
+				fmt.Fprintf(os.Stderr, "Suggestion: %s\n", fe.Suggestion)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Error parsing PromQL query: %v\n", err)
+		}
 		os.Exit(1)
 	}
 

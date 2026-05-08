@@ -11,7 +11,7 @@ func formatPromQL(input string) (string, error) {
 	smushed := strings.Join(strings.Fields(input), " ")
 	expr, err := parser.ParseExpr(smushed)
 	if err != nil {
-		return "", err
+		return "", newPrettyQLError(err.Error())
 	}
 	return expr.Pretty(0), nil
 }

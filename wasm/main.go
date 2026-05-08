@@ -3,16 +3,16 @@
 package main
 
 import (
-	"syscall/js"
+	"strings"
 
 	"github.com/prometheus/prometheus/promql/parser"
-	"strings"
+	"syscall/js"
 )
 
 func formatPromQL(this js.Value, args []js.Value) interface{} {
 	if len(args) == 0 {
 		return map[string]interface{}{
-			"error": "no query provided",
+			"error": newAppError("no query provided", "Enter a PromQL query before clicking Format."),
 		}
 	}
 
@@ -22,7 +22,7 @@ func formatPromQL(this js.Value, args []js.Value) interface{} {
 	expr, err := parser.ParseExpr(smushed)
 	if err != nil {
 		return map[string]interface{}{
-			"error": err.Error(),
+			"error": newPrettyQLError(err.Error()),
 		}
 	}
 

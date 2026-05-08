@@ -276,6 +276,18 @@
     font-size: 0.85rem;
   }
 
+  .error-title {
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+
+  .error-suggestion {
+    margin-top: 0.5rem;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    font-size: 0.8rem;
+  }
+
   /* Syntax highlighting */
   .hl-keyword { color: var(--keyword); font-weight: 600; }
   .hl-func { color: var(--func); }
@@ -597,6 +609,25 @@
   }
 
   // Format query
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderError(kind, message, suggestion) {
+    var title = kind === 'prettyql' ? 'PromQL error' : 'Application error';
+    var html = '<div class="error-text"><div class="error-title">' + escapeHtml(title) + '</div>' +
+      '<div>' + escapeHtml(message) + '</div>';
+    if (suggestion) {
+      html += '<div class="error-suggestion">Suggestion: ' + escapeHtml(suggestion) + '</div>';
+    }
+    return html + '</div>';
+  }
+
   async function formatQuery() {
     var query = input.value.trim();
     if (!query) {
@@ -625,9 +656,7 @@
       }
 
       if (data.error) {
-        output.innerHTML = '<span class="error-text">' +
-          data.error.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
-          '</span>';
+        output.innerHTML = renderError(data.error.source, data.error.message, data.error.suggestion);
         lastFormattedRaw = '';
       } else {
         lastFormattedRaw = data.formatted;
@@ -635,10 +664,7 @@
       }
     } catch (err) {
       var hint = wasmReady ? '' : '\n\nHint: WASM did not load. If running as a static site, make sure prettyql.wasm and wasm_exec.js are in the same directory as index.html (run build-wasm.sh first). If running via the Go server (--serve), this is expected — the server handles formatting.';
-      output.innerHTML = '<span class="error-text">Failed to format query: ' +
-        err.message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
-        hint.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
-        '</span>';
+      output.innerHTML = renderError('app', 'Failed to format query: ' + err.message + hint, wasmReady ? '' : 'Run build-wasm.sh for static hosting, or use the Go server with --serve.');
       lastFormattedRaw = '';
     } finally {
       formatBtn.disabled = false;
